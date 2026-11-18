@@ -187,6 +187,31 @@ function syncOff(){
   try{localStorage.removeItem(KEY+'_sync')}catch(e){}
   syncMsg='';render();
 }
+const cats=()=>{S.cats=S.cats||{};S.cats.expense=S.cats.expense||[];S.cats.income=S.cats.income||[];return S.cats};
+const catList=t=>[...new Set([...(t==='income'?INC:EXP),...cats()[t],...S.tx.filter(x=>x.type===t).map(x=>x.category)])].filter(Boolean);
+function segHTML(sel,withDebt){
+  const L=[['expense','Chi'],['income','Thu']];if(withDebt)L.push(['debt','Vay/Nợ']);
+  return `<div class="seg" style="margin-top:12px">`+L.map(([v,l])=>`<label><input type="radio" name="ty" value="${v}" ${v===sel?'checked':''}><span>${l}</span></label>`).join('')+`</div>`;
+}
+function debtMenu(){
+  openSheet(`<h2>Thêm giao dịch</h2>${segHTML('debt',true)}<div style="margin-top:12px">`+[['borrow','Đi vay','Mình vay tiền của ai đó'],['lend','Cho vay','Mình cho người khác vay'],['repay','Trả nợ','Trả bớt hoặc trả hết khoản mình đang nợ'],['collect','Thu nợ','Người khác trả lại tiền cho mình']].map(([k,a,b])=>`<button class="item" onclick="debtFlow('${k}')"><span>${a}<small>${b}</small></span><b>›</b></button>`).join('')+`</div><div class="btns"><button onclick="closeSheet()">Hủy</button></div>`);
+  document.querySelectorAll('[name=ty]').forEach(r=>r.onchange=()=>{if(r.value==='debt')debtMenu();else txForm(null,r.value)});
+}
+function debtFlow(k){if(k==='borrow')debtForm('owe');else if(k==='lend')debtForm('lent');else debtPick(k)}
+function debtPick(kind){
+  const k=kind==='repay'?'owe':'lent',L=S.debts.filter(d=>d.kind===k&&remaining(d)>0);
+  openSheet(`<h2>${kind==='repay'?'Trả nợ':'Thu nợ'}</h2><p class="note">Chọn khoản nợ.</p>`+(L.length?L.map(d=>`<button class="item" onclick="payForm('${d.id}')"><span>${esc(d.person)}<small>${esc(dueTxt(d).slice(3))}</small></span><b class="debt">${fmt(remaining(d))}</b></button>`).join(''):`<p class="empty">${k==='owe'?'Chưa có khoản nợ nào đang còn.':'Chưa có ai đang nợ mình.'}</p>`)+`<div class="btns"><button onclick="debtMenu()">Quay lại</button></div>`);
+}
+function payForm(id){
+  const d=S.debts.find(x=>x.id===id),r=remaining(d),owe=d.kind==='owe';
+  openSheet(`<h2>${owe?'Trả nợ':'Thu nợ'}: ${esc(d.person)}</h2><p class="note">Còn lại ${fmt(r)}. ${owe?'Số dư ví sẽ giảm':'Số dư ví sẽ tăng'} theo số tiền này.</p><label for="pa">Số tiền</label><input id="pa" inputmode="numeric" value="${money(d.monthly?Math.min(d.monthly,r):r)}" oninput="this.value=money(num(this.value))"><label for="pd">Ngày</label><input id="pd" type="date" value="${today()}"><div class="btns"><button onclick="debtPick('${owe?'repay':'collect'}')">Quay lại</button><button class="p" onclick="addPay('${id}',true)">${owe?'Trả nợ':'Thu nợ'}</button></div>`);
+}
+function catMgr(){
+  const row=t=>{const L=cats()[t];return `<h2>${t==='expense'?'Khoản chi':'Khoản thu'} của tôi</h2>`+(L.length?L.map((c,i)=>`<div class="pay"><span>${esc(c)}</span><button onclick="delCat('${t}',${i})">Xóa</button></div>`).join(''):'<p class="note">Chưa có danh mục riêng.</p>')+`<div style="display:flex;gap:8px;margin-top:8px"><input id="nc-${t}" placeholder="Tên mới"><button class="ic" style="width:auto;padding:0 14px" onclick="addCat('${t}')">Thêm</button></div>`};
+  openSheet(`<h2>Danh mục của tôi</h2>`+row('expense')+row('income')+`<p class="note">Xóa một danh mục không làm mất các giao dịch đã ghi, danh mục đó vẫn hiện nếu còn giao dịch dùng nó.</p><div class="btns"><button onclick="closeSheet()">Đóng</button></div>`);
+}
+function addCat(t){const n=$('#nc-'+t).value.trim();if(!n)return;if(!catList(t).includes(n)){cats()[t].push(n);save()}catMgr()}
+function delCat(t,i){cats()[t].splice(i,1);save();catMgr()}
 function saveSched(id){
   const d=S.debts.find(x=>x.id===id),dd=num($('#dd').value);
   d.dueDay=dd>=1&&dd<=31?dd:0;d.monthly=num($('#mo').value);d.endDate=$('#en').value||'';
@@ -246,6 +271,7 @@ function debts(){
 function more(){
   return `<div class="top"><h1>Khác</h1></div>
   <div class="box"><small>Số dư đầu kỳ (tiền đang có lúc bắt đầu dùng app)</small><input id="open" value="${money(S.opening)}" oninput="this.value=sm(this.value)"><div class="btns"><button class="p" onclick="S.opening=snum($('#open').value);save();toast()">Lưu số dư đầu kỳ</button></div></div>
+  <div class="box" style="margin-top:10px"><small>Danh mục thu chi</small><div class="btns"><button onclick="catMgr()">Quản lý danh mục của tôi</button></div></div>
   <div class="box" style="margin-top:10px"><small>Sao lưu và xuất dữ liệu</small><div class="btns"><button onclick="backup('json')">Sao lưu</button><button onclick="backup('csv')">Xuất CSV</button><button onclick="restoreForm()">Khôi phục</button></div></div>
   
   <p class="note">Dữ liệu nằm trong máy này. Hãy sao lưu ra file định kỳ, nhất là trước khi đổi điện thoại hoặc xóa dữ liệu trình duyệt.</p>`;
@@ -262,17 +288,19 @@ $('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()})
 document.querySelectorAll('nav .t').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
 $('#addBtn').onclick=()=>txForm();
 
-function txForm(id){
-  const t=id?S.tx.find(x=>x.id===id):{type:'expense',date:today(),category:'Ăn uống',amount:0,note:''};
+function txForm(id,ty0){
+  const t=id?S.tx.find(x=>x.id===id):{type:ty0||'expense',date:today(),category:'',amount:0,note:''};
   openSheet(`<h2>${id?'Sửa giao dịch':'Thêm giao dịch'}</h2>
-  <div class="seg" style="margin-top:12px"><label><input type="radio" name="ty" value="expense" ${t.type==='expense'?'checked':''}><span>Chi</span></label><label><input type="radio" name="ty" value="income" ${t.type==='income'?'checked':''}><span>Thu</span></label></div>
+  ${segHTML(t.type,!id)}
   <label for="am">Số tiền</label><input id="am" inputmode="numeric" placeholder="0" value="${money(t.amount)}" oninput="this.value=money(num(this.value))">
-  <label for="ca">Danh mục</label><select id="ca"></select>
+  <label for="ca">Danh mục</label><select id="ca"></select><button type="button" id="addcat" class="ic" style="width:auto;padding:0 12px;height:32px;margin-top:6px">+ Thêm danh mục</button><div id="newcat" style="display:none;margin-top:6px;gap:8px"><input id="ncn" placeholder="Tên danh mục mới" style="flex:1"><button type="button" id="ncok" class="ic" style="width:auto;padding:0 14px">Thêm</button></div>
   <label for="no">Ghi chú</label><input id="no" value="${esc(t.note)}">
   <label for="da">Ngày</label><input id="da" type="date" value="${t.date}">
   <div class="btns">${id?'<button class="d" id="del">Xóa</button>':''}<button id="cx">Hủy</button><button class="p" id="ok">Lưu</button></div>`);
-  const fill=()=>{const ty=document.querySelector('[name=ty]:checked').value;const L=ty==='income'?INC:EXP;$('#ca').innerHTML=L.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')};
-  fill();document.querySelectorAll('[name=ty]').forEach(r=>r.onchange=()=>{t.category='';fill()});
+  const fill=()=>{const ty=document.querySelector('[name=ty]:checked').value;const L=catList(ty);$('#ca').innerHTML=L.map(c=>`<option ${c===t.category?'selected':''}>${esc(c)}</option>`).join('')};
+  fill();document.querySelectorAll('[name=ty]').forEach(r=>r.onchange=()=>{if(r.value==='debt'){debtMenu();return}t.category='';fill()});
+  $('#addcat').onclick=()=>{$('#newcat').style.display='flex';$('#ncn').focus()};
+  $('#ncok').onclick=()=>{const n=$('#ncn').value.trim();if(!n)return;const ty=document.querySelector('[name=ty]:checked').value;if(!catList(ty).includes(n)){cats()[ty].push(n);save()}t.category=n;fill();$('#newcat').style.display='none';$('#ncn').value=''};
   setTimeout(()=>$('#am').focus(),50);
   $('#cx').onclick=closeSheet;
   if(id)$('#del').onclick=()=>{S.tx=S.tx.filter(x=>x.id!==id);save();closeSheet();render()};
@@ -283,9 +311,9 @@ function txForm(id){
     save();month=rec.date.slice(0,7);closeSheet();render();
   };
 }
-function debtForm(){
-  openSheet(`<h2>Thêm khoản nợ</h2>
-  <div class="seg" style="margin-top:12px"><label><input type="radio" name="k" value="owe" checked><span>Mình nợ người khác</span></label><label><input type="radio" name="k" value="lent"><span>Mình cho vay</span></label></div>
+function debtForm(pre){
+  openSheet(`<h2>${pre==='lent'?'Cho vay':pre==='owe'?'Đi vay':'Thêm khoản nợ'}</h2>
+  <div class="seg" style="margin-top:12px"><label><input type="radio" name="k" value="owe" ${pre==='lent'?'':'checked'}><span>Mình nợ người khác</span></label><label><input type="radio" name="k" value="lent" ${pre==='lent'?'checked':''}><span>Mình cho vay</span></label></div>
   <label for="pe">Người nợ / chủ nợ</label><input id="pe">
   <label for="am">Số tiền gốc</label><input id="am" inputmode="numeric" placeholder="0" oninput="this.value=money(num(this.value))">
   <label for="da">Ngày phát sinh</label><input id="da" type="date" value="${today()}">
@@ -313,7 +341,7 @@ function debtView(id){
   <h2>Lịch trả hằng tháng</h2><div class="row2"><div><label for="dd">Ngày trả (1-31)</label><input id="dd" inputmode="numeric" value="${d.dueDay||''}"></div><div><label for="mo">Số tiền mỗi kỳ</label><input id="mo" inputmode="numeric" value="${money(d.monthly)}" oninput="this.value=money(num(this.value))"></div></div><label for="en">Ngày trả kỳ cuối</label><input id="en" type="date" value="${d.endDate||''}"><div class="btns"><button onclick="saveSched('${d.id}')">Lưu lịch trả</button></div>
   <div class="btns"><button class="d" onclick="delDebt('${d.id}')">Xóa khoản nợ</button><button onclick="closeSheet()">Đóng</button>${r>0?`<button class="p" onclick="addPay('${d.id}')">${owe?'Trả nợ':'Thu hồi'}</button>`:''}</div>`);
 }
-function addPay(id){const d=S.debts.find(x=>x.id===id),a=num($('#pa').value);if(!a)return;d.payments=d.payments||[];d.payments.push({id:uid(),amount:Math.min(a,remaining(d)),date:today()});save();debtView(id);render()}
+function addPay(id,menu){const d=S.debts.find(x=>x.id===id),a=num($('#pa').value);if(!a)return;d.payments=d.payments||[];d.payments.push({id:uid(),amount:Math.min(a,remaining(d)),date:($('#pd')&&$('#pd').value)||today()});save();if(menu)closeSheet();else debtView(id);render()}
 function delPay(id,pid){const d=S.debts.find(x=>x.id===id);d.payments=d.payments.filter(p=>p.id!==pid);save();debtView(id);render()}
 function delDebt(id){S.debts=S.debts.filter(x=>x.id!==id);save();closeSheet();render()}
 
@@ -329,7 +357,7 @@ function backup(kind){
 function restoreForm(){
   openSheet(`<h2>Khôi phục</h2><p class="note">Dán nội dung sao lưu (dạng JSON) vào đây. Dữ liệu hiện tại sẽ bị thay thế.</p><label for="rf">Chọn file sao lưu (nếu có)</label><input id="rf" type="file" accept=".json,.txt,text/plain,application/json"><textarea id="rs" style="margin-top:8px"></textarea><div class="btns"><button onclick="closeSheet()">Hủy</button><button class="p" id="go">Khôi phục</button></div>`);
   $('#rf').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('#rs').value=String(r.result)};r.readAsText(f)};
-  $('#go').onclick=()=>{try{const o=JSON.parse($('#rs').value);if(!Array.isArray(o.tx)||!Array.isArray(o.debts))throw 0;S={opening:o.opening||0,tx:o.tx,debts:o.debts};migrate();save();closeSheet();render()}catch(e){$('#rs').value='';$('#rs').placeholder='Nội dung không đúng định dạng JSON sao lưu. Hãy dán lại toàn bộ bản sao lưu.'}};
+  $('#go').onclick=()=>{try{const o=JSON.parse($('#rs').value);if(!Array.isArray(o.tx)||!Array.isArray(o.debts))throw 0;S={opening:o.opening||0,tx:o.tx,debts:o.debts,cats:o.cats};migrate();save();closeSheet();render()}catch(e){$('#rs').value='';$('#rs').placeholder='Nội dung không đúng định dạng JSON sao lưu. Hãy dán lại toàn bộ bản sao lưu.'}};
 }
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 migrate();render();initDb();
